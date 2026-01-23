@@ -1,7 +1,7 @@
 import { Post } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { PostWhereInput } from "../../../generated/prisma/models";
-import { PostStatus } from "../../../generated/prisma/enums";
+import { CommentStatus, PostStatus } from "../../../generated/prisma/enums";
 
 const createPost = async (
   data: Omit<Post, "id" | "createdAt" | "updatedAt" | "authorId">,
@@ -95,9 +95,16 @@ const getAllPosts = async ({
     orderBy: {
       [sortBy]: sortOrder,
     },
+    include: {
+      _count: {
+        select: {
+          comments: true,
+        },
+      },
+    },
   });
 
-  const total = await prisma.post.count({
+  const totalPost = await prisma.post.count({
     where: {
       AND: andConditions,
     },
@@ -105,7 +112,12 @@ const getAllPosts = async ({
 
   return {
     data: allPost,
-    pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    pagination: {
+      totalPost,
+      page,
+      limit,
+      totalPages: Math.ceil(totalPost / limit),
+    },
   };
 };
 
@@ -125,6 +137,32 @@ const getPostById = async (postId: string) => {
     const postData = await tx.post.findUnique({
       where: {
         id: postId,
+      },
+      include: {
+        comments: {
+          where: { parentId: null, status: CommentStatus.APPROVED },
+          orderBy: { createdAt: "desc" },
+
+          include: {
+            replies: {
+              where: {
+                status: CommentStatus.APPROVED,
+              },
+              orderBy: { createdAt: "asc" },
+              include: {
+                replies: {
+                  where: {
+                    status: CommentStatus.APPROVED,
+                  },
+                },
+              },
+            },
+          },
+        },
+
+        _count: {
+          select: { comments: true },
+        },
       },
     });
     return postData;
